@@ -1,0 +1,157 @@
+---
+title: "Prediction Algorithm for the Quickly Text Prediction App"
+author: "Carl Turner"
+date: "April 20, 2016"
+output: html_document
+---
+
+##Background
+Presenting mobile users with predictions of text can significantly improve the usability of entering text on small keyboards. This project attempts to balance speed and accuracy in a text prediction model by 1) using small samples of a large text database and 2) creating a fast algorithm for predicting next word text from user input. This approach sacrifices some accuracy for speed. 
+
+##Initial Line and Word Count
+This first step simply opens the US English blog file, reads the file, and prints line counts and word counts.
+
+```{r, cache=FALSE, label="read file"}
+library(ngram)
+strTime <- Sys.time()
+fileName <- "./data/final/en_US/en_US.blogs.txt"
+con <- file(fileName,open="r")
+txt <- readLines(con, skipNul = TRUE, n=3000)
+close(con)
+
+saveRDS(txt, "shiny/data/blogtxt.rds") #used in server.R
+txt<-readRDS("shiny/data/blogtxt.rds") #used in server.R
+#rm(txt) #248MB
+endTime <- Sys.time()
+timeRun <- difftime(endTime,strTime,units="auto")
+timeRun
+```
+
+##Ngrams of Data Source
+In this section the frequencies for individual words, 2-grams (bigrams), and 3-grams (trigrams), are caluculated for US blogs.
+
+###Single Letter
+Pre-processing is done by removing non-alpha characters before computing word frequencies. Then the words are sorted by their frequency of occurance. The 10 most-frequent words are shown below.
+
+I found that memory limitations of my own machine prevented me from scanning the entire news file. 
+
+```{r, cache=TRUE, label="blog single letter"}
+library(ngram)
+library(stringr)
+blogtxt = scan(text = txt, what="", quote=NULL, blank.lines.skip = TRUE)#######
+
+blogtxt<-gsub("[^[:alnum:][:space:]\']", " ", blogtxt) #remove all punctuation except "'"
+blogtxt<-gsub("â ", "\'", blogtxt)
+blogtxt<-gsub("\\' ", "\\'", blogtxt)
+blogtxt<-gsub(" [b-hj-z] "," ", blogtxt) #remove single letters except a,i
+blogtxt<-preprocess(blogtxt)
+blogtxt<-preprocess(blogtxt, case="lower", split.at.punct=FALSE)
+blogcounts = as.data.frame(xtabs(~blogtxt))
+blog.str = paste(blogtxt, collapse=" ")
+
+library(tau)
+blog.counts = textcnt(blog.str, n=1, method="string", tolower=T) #1-gram
+blog.counts.df = data.frame(word = names(blog.counts), count = c(blog.counts))
+head(blog.counts.df[order(blog.counts.df$count, decreasing = T),], 10)
+sum(blog.counts.df$count) #word count
+```
+
+###2-grams
+The 2-grams (bigrams) are created by taking each pair of words, then calculating the frequencies that each pair appears in the corpus. As shown in the figure, there are a small number of high-frequency 2-grams. The high-frequency 2-grams are shown in the table below the figure. 
+
+```{r, cache=TRUE, label="blog 2gram"}
+library(ggplot2)
+library(NLP)
+library(tm)
+blog.corpus = Corpus(VectorSource(blog.str))
+blog.corpus = tm_map(blog.corpus, tolower) 
+cleaned.blog.str = as.character(blog.corpus)[1]
+blog.words = strsplit(cleaned.blog.str, " ", fixed = T)[[1]]
+
+blog.bigrams = vapply(ngrams(blog.words, 2), paste, "", collapse = " ")
+blog.bigram.counts = as.data.frame(xtabs(~blog.bigrams))
+blog.bigrams.y <- blog.bigram.counts[order(blog.bigram.counts$Freq, decreasing = T),]
+y<-blog.bigrams.y
+x<-c(1:length(y$Freq))
+
+qplot(x, y$Freq, 
+      main = "US Blogs", 
+      xlab = "ngram = 2",
+      ylab = "frequency", 
+      xlim = c(0, length(y$Freq)/10),
+      na.rm = TRUE,
+      geom = c("line", "point"))
+head(y)
+
+```
+
+###3-grams
+The 3-grams (trigrams) are created from trios of words, then frequencies are calculated for each 3-gram. The distribution of 3-grams are shown in the figure and the names of the most frequent 3-grams are in the table below the figure. 
+
+```{r, cache=TRUE, label="blog 3gram"}
+library(ggplot2)
+library(NLP)
+library(tm)
+blog.trigrams = vapply(ngrams(blog.words, 3), paste, "", collapse = " ")
+blog.trigram.counts = as.data.frame(xtabs(~blog.trigrams))
+blog.trigrams.y <- blog.trigram.counts[order(blog.trigram.counts$Freq, decreasing = T),]
+y<-blog.trigrams.y
+x<-c(1:length(y$Freq))
+
+qplot(x, y$Freq, 
+      main = "US Blogs", 
+      xlab = "ngram = 3",
+      ylab = "frequency", 
+      xlim = c(0, length(y$Freq)/10),
+      na.rm = TRUE,
+      geom = c("line", "point"))
+head(y)
+```
+
+##Prediction Function
+
+###Matching Routine
+
+```{r, cache=FALSE, label="matching routine"}
+library(stringr)
+getTrigram <- function(matches, userinp) {
+    for(i in 1:length(matches$blog.trigrams)){
+        if (word(matches$blog.trigrams[i],1) == word(userinp, 1)){
+            #print(matches$blog.trigrams[i])
+            return(word(matches$blog.trigrams[i], 3))
+            break
+        }
+    } 
+}
+getBigram <- function(matches, userinp) {
+    for(i in 1:length(matches$blog.bigrams)){
+        if (word(matches$blog.bigrams[i],1) == word(userinp, 2)){
+            #print(matches$blog.bigrams[i])
+            return(word(matches$blog.bigrams[i], 2))
+            break
+        }
+    } 
+}
+getPrediction <- function(userinp) {
+    matches<-blog.trigrams.y[grep(userinp, blog.trigrams.y$blog.trigrams), ]
+    if (dim(matches)[1]>0){
+        getTrigram(matches, userinp)
+    } else {
+        matches<-blog.bigrams.y[grep(word(userinp, 2), blog.bigrams.y$blog.bigrams), ]
+        if (dim(matches)[1]>0){
+            getBigram(matches, userinp)
+        } else {
+            return("no prediction")
+        }
+    }
+}
+
+```
+
+###Test Cases
+```{r, label="test cases"}
+userinp <- c("one of") #a top trigram returns 'the'
+#userinp <- c("one in") #not in trigram, but in bigram. "of" returns 'the'
+#userinp <- c("one only") #not in trigram or bigram
+getPrediction(userinp)
+```
