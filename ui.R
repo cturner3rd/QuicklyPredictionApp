@@ -1,9 +1,9 @@
 shinyUI(
     pageWithSidebar(
         # Application title
-        headerPanel("Word prediction"),
+        headerPanel("Quickly Word Prediction App"),
         sidebarPanel(
-            textInput("bigram", "Type two words:", ""),
+            textInput("bigram", "Type a phrase (> 1 word):", ""),
             submitButton('Submit')
         ),
         mainPanel(

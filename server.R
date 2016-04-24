@@ -20,8 +20,6 @@ blog.str = paste(blogtxt, collapse=" ")
 
 blog.counts = textcnt(blog.str, n=1, method="string", tolower=T) #1-gram
 blog.counts.df = data.frame(word = names(blog.counts), count = c(blog.counts))
-#head(blog.counts.df[order(blog.counts.df$count, decreasing = T),], 10)
-#sum(blog.counts.df$count) #word count
 
 ##blog 2gram
 blog.corpus = Corpus(VectorSource(blog.str))
@@ -39,6 +37,16 @@ blog.trigram.counts = as.data.frame(xtabs(~blog.trigrams))
 blog.trigrams.y <- blog.trigram.counts[order(blog.trigram.counts$Freq, decreasing = T),]
 
 #Prediction function
+trimInput <- function(userinp) {
+    userinp<-str_replace_all(userinp, fixed("  "), " ")
+    userinp<-str_trim(userinp) 
+    if (length(unlist(strsplit(userinp, " "))) < 3){
+        userinp
+    } else {
+        userinpLen <- length(unlist(strsplit(userinp," ")))
+        paste(word(userinp, userinpLen-1), word(userinp, userinpLen))
+    }
+}
 getTrigram <- function(matches, userinp) {
     for(i in 1:length(matches$blog.trigrams)){
         if (word(matches$blog.trigrams[i],1) == word(userinp, 1)){
@@ -58,6 +66,7 @@ getBigram <- function(matches, userinp) {
     } 
 }
 getPrediction <- function(userinp) {
+    userinp <- trimInput(userinp)
     matches<-blog.trigrams.y[grep(userinp, blog.trigrams.y$blog.trigrams), ]
     if (dim(matches)[1]>0){
         getTrigram(matches, userinp)
@@ -73,7 +82,6 @@ getPrediction <- function(userinp) {
 shinyServer(
         function(input, output) {
         output$inputValue <- renderPrint(input$bigram)
-        #output$prediction <- renderPrint({myprediction(input$bigram)})
         output$prediction <- renderPrint({getPrediction(input$bigram)})
     }
 )
