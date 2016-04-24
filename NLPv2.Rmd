@@ -1,5 +1,5 @@
 ---
-title: "Prediction Algorithm for the Quickly Text Prediction App"
+title: "The _Quickly_ Word Prediction App"
 author: "Carl Turner"
 date: "April 20, 2016"
 output: html_document
@@ -9,7 +9,7 @@ output: html_document
 Presenting mobile users with predictions of text can significantly improve the usability of entering text on small keyboards. This project attempts to balance speed and accuracy in a text prediction model by 1) using small samples of a large text database and 2) creating a fast algorithm for predicting next word text from user input. This approach sacrifices some accuracy for speed. 
 
 ##Initial Line and Word Count
-This first step simply opens the US English blog file, reads the file, and prints line counts and word counts.
+This first step simply opens the US English blog file, reads the file, and outputs it as an RDS file to be used in the Shiny app. 
 
 ```{r, cache=FALSE, label="read file"}
 library(ngram)
@@ -21,7 +21,6 @@ close(con)
 
 saveRDS(txt, "shiny/data/blogtxt.rds") #used in server.R
 txt<-readRDS("shiny/data/blogtxt.rds") #used in server.R
-#rm(txt) #248MB
 endTime <- Sys.time()
 timeRun <- difftime(endTime,strTime,units="auto")
 timeRun
@@ -114,6 +113,16 @@ head(y)
 
 ```{r, cache=FALSE, label="matching routine"}
 library(stringr)
+trimInput <- function(userinp) {
+    userinp<-str_replace_all(userinp, fixed("  "), " ")
+    userinp<-str_trim(userinp) 
+    if (length(unlist(strsplit(userinp, " "))) < 3){
+        userinp
+    } else {
+        userinpLen <- length(unlist(strsplit(userinp," ")))
+        paste(word(userinp, userinpLen-1), word(userinp, userinpLen))
+    }
+}
 getTrigram <- function(matches, userinp) {
     for(i in 1:length(matches$blog.trigrams)){
         if (word(matches$blog.trigrams[i],1) == word(userinp, 1)){
@@ -133,6 +142,7 @@ getBigram <- function(matches, userinp) {
     } 
 }
 getPrediction <- function(userinp) {
+    userinp <- trimInput(userinp)
     matches<-blog.trigrams.y[grep(userinp, blog.trigrams.y$blog.trigrams), ]
     if (dim(matches)[1]>0){
         getTrigram(matches, userinp)
